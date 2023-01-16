@@ -5,16 +5,14 @@ import config
 import librosa
 from pydub import AudioSegment
 import time
+import joblib
 
 openai.api_key = config.api_key
 
 st.title("Lecture to Anki")
-with st.spinner("Uploading and transcribing lecture..."):
-    audio_file = st.file_uploader("Upload a lecture", type=["mp3", "mp4", "wav"])
 
-approved_cards = []
 
-if audio_file:
+def transcribe(audio_file):
     audio_segment = AudioSegment.from_file(audio_file)
     audio_segment = audio_segment.set_frame_rate(16000)
     audio_segment.export("output.wav", format="wav")
@@ -25,7 +23,6 @@ if audio_file:
     segment_length = 30
     num_segments = len(audio) // (segment_length * sr)
 
-    start_time = time.time()
     transcription = ""
     for i in range(num_segments):
         start = i * segment_length * sr
@@ -34,13 +31,14 @@ if audio_file:
         result = model.transcribe(audio_segment)
         transcription += result["text"]
 
-    end_time = time.time()
-    st.spinner("Done!")
-    st.write("Transcription time: ", end_time - start_time)
+    return transcription
 
+
+def generate_cards(transcription):
     prompt = f"Please generate 3 detailed, Basic-type Anki flashcards in the format 'Question|answer$' from the following text: {transcription}"
 
-    response = openai.Completion.create(model="text-davinci-003", prompt=prompt, max_tokens=1000, temperature=0.5, top_p=1, frequency_penalty=0, presence_penalty=0.6)
+    response = openai.Completion.create(model="text-davinci-003", prompt=prompt, max_tokens=1000, temperature=0.5,
+                                        top_p=1, frequency_penalty=0, presence_penalty=0.6)
 
     raw_anki_cards = response["choices"][0]["text"]
 
@@ -50,18 +48,47 @@ if audio_file:
         if card != "":
             card = card.split("|")
             approved_cards.append({"question": card[0], "answer": card[1]})
-    st.write(approved_cards)
 
-# Create a prompt to accept/deny each cards. If accepted, add to Anki-friendly file
-final_approved_cards = []
-count = 0
-for card in approved_cards:
-    question = card["question"]
-    answer = card["answer"]
-    option = st.selectbox('Keep this card?', ('Yes', 'Np'), key=count)
-    if option == "Yes":
-        final_approved_cards.append(card)
-    count += 1
-    if option == "No":
-        continue
 
+approved_cards = []
+audio_file = st.file_uploader("Upload a lecture", type=["mp3", "mp4", "wav"])
+if audio_file:
+    with st.spinner("Uploading and transcribing lecture..."):
+        try:
+            transcription = joblib.load("transcription.pkl")
+        except:
+            transcription = transcribe(audio_file)
+            joblib.dump(transcription, "transcription.pkl")
+        generate_cards(transcription)
+
+    st.success("Lecture transcribed!")
+
+if len(approved_cards) > 0:
+    try:
+        final_approved_cards = joblib.load("final_approved_cards.pkl")
+        count = 0
+        for card in approved_cards:
+            question = card["question"]
+            answer = card["answer"]
+            accepted = st.checkbox(f"Accept card {count + 1}?", value=True)
+            if accepted:
+                final_approved_cards.append({"question": question, "answer": answer})
+            count += 1
+    except:
+        final_approved_cards = []
+        count = 0
+        for card in approved_cards:
+            question = card["question"]
+            answer = card["answer"]
+            accepted = st.checkbox(f"Accept card {count + 1}?", value=True)
+            if accepted:
+                final_approved_cards.append({"question": question, "answer": answer})
+            count += 1
+        joblib.dump(final_approved_cards, "final_approved_cards.pkl")
+
+    st.success("Cards generated!")
+    # if st.button("Save Anki-friendly file"):
+    #     with open("anki_cards.txt", "w") as f:
+    #         for card in final_approved_cards:
+    #             f.write(f"{card['question']}\t{card['answer']}\n")
+    #     st.success("Anki-friendly file saved!")

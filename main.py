@@ -51,6 +51,7 @@ def generate_cards(transcription):
 
 
 approved_cards = []
+final_approved_cards = []
 audio_file = st.file_uploader("Upload a lecture", type=["mp3", "mp4", "wav"])
 if audio_file:
     with st.spinner("Uploading and transcribing lecture..."):
@@ -64,29 +65,14 @@ if audio_file:
     st.success("Lecture transcribed!")
 
 if len(approved_cards) > 0:
-    try:
-        final_approved_cards = joblib.load("final_approved_cards.pkl")
-        count = 0
-        for card in approved_cards:
-            question = card["question"]
-            answer = card["answer"]
-            accepted = st.checkbox(f"Accept card {count + 1}?", value=True)
-            if accepted:
-                final_approved_cards.append({"question": question, "answer": answer})
-            count += 1
-    except:
-        final_approved_cards = []
-        count = 0
-        for card in approved_cards:
-            question = card["question"]
-            answer = card["answer"]
-            accepted = st.checkbox(f"Accept card {count + 1}?", value=True)
-            if accepted:
-                final_approved_cards.append({"question": question, "answer": answer})
-            count += 1
-        joblib.dump(final_approved_cards, "final_approved_cards.pkl")
-
+    for card in approved_cards:
+        question, answer = card["question"], card["answer"]
+        accepted = st.checkbox(f"Accept card? {question} {answer}", value=True)
+        if accepted:
+            final_approved_cards.append({"question": question, "answer": answer})
+    approved_cards = []
     st.success("Cards generated!")
+
     # if st.button("Save Anki-friendly file"):
     #     with open("anki_cards.txt", "w") as f:
     #         for card in final_approved_cards:
